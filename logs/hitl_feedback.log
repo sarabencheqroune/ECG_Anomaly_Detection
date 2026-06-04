@@ -1,0 +1,560 @@
+"""
+HITL (Human-in-the-Loop) Feedback Logging System
+Logs expert reviews, corrections, and model performance improvements
+"""
+
+import logging
+from logging.handlers import RotatingFileHandler
+from datetime import datetime
+from pathlib import Path
+import json
+from typing import Dict, Any, Optional
+import pandas as pd
+
+
+class HITLLogger:
+    """
+    Specialized logger for Human-in-the-Loop feedback
+    
+    Logs:
+    - Expert review actions
+    - Model corrections
+    - Performance improvements
+    - Queue statistics
+    - Active learning events
+    """
+    
+    def __init__(self, log_dir: str = "./logs", max_bytes: int = 10 * 1024 * 1024,
+                 backup_count: int = 5):
+        """
+        Initialize HITL logger
+        
+        Args:
+            log_dir: Directory for log files
+            max_bytes: Maximum log file size before rotation
+            backup_count: Number of backup files to keep
+        """
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Main log file
+        self.log_path = self.log_dir / "hitl_feedback.log"
+        
+        # Setup rotating file handler
+        self.logger = logging.getLogger('hitl_feedback')
+        self.logger.setLevel(logging.INFO)
+        
+        # Remove existing handlers
+        self.logger.handlers.clear()
+        
+        # File handler with rotation
+        file_handler = RotatingFileHandler(
+            self.log_path, 
+            maxBytes=max_bytes,
+            backupCount=backup_count
+        )
+        
+        # Formatter
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)s | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(formatter)
+        
+        self.logger.addHandler(file_handler)
+        
+        # Also log to console for debugging
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        self.logger.addHandler(console_handler)
+        
+        # Initialize log file with header
+        self._init_log_file()
+        
+    def _init_log_file(self):
+        """Initialize log file with header information"""
+        header = {
+            'event': 'logger_initialized',
+            'timestamp': datetime.now().isoformat(),
+            'log_file': str(self.log_path),
+            'version': '1.0.0'
+        }
+        self.logger.info(json.dumps(header))
+        
+    def log_review_request(self, item_id: str, model_confidence: float,
+                          model_prediction: str, priority: str,
+                          reason: str):
+        """Log when an item is sent for expert review"""
+        log_entry = {
+            'event': 'review_request',
+            'timestamp': datetime.now().isoformat(),
+            'item_id': item_id,
+            'model_confidence': model_confidence,
+            'model_prediction': model_prediction,
+            'priority': priority,
+            'reason': reason
+        }
+        self.logger.info(json.dumps(log_entry))
+        
+    def log_review_completion(self, item_id: str, reviewer_id: str,
+                             original_label: str, corrected_label: str,
+                             reviewer_confidence: float, time_taken_seconds: float,
+                             notes: str = ""):
+        """Log when an expert completes a review"""
+        was_corrected = original_label != corrected_label
+        
+        log_entry = {
+            'event': 'review_completed',
+            'timestamp': datetime.now().isoformat(),
+            'item_id': item_id,
+            'reviewer_id': reviewer_id,
+            'original_label': original_label,
+            'corrected_label': corrected_label,
+            'was_corrected': was_corrected,
+            'reviewer_confidence': reviewer_confidence,
+            'time_taken_seconds': time_taken_seconds,
+            'notes': notes
+        }
+        self.logger.info(json.dumps(log_entry))
+        
+    def log_model_correction(self, item_id: str, original_prediction: str,
+                            corrected_label: str, model_confidence_before: float,
+                            model_confidence_after: float):
+        """Log when model is corrected by expert feedback"""
+        improvement = model_confidence_after - model_confidence_before
+        
+        log_entry = {
+            'event': 'model_correction',
+            'timestamp': datetime.now().isoformat(),
+            'item_id': item_id,
+            'original_prediction': original_prediction,
+            'corrected_label': corrected_label,
+            'confidence_before': model_confidence_before,
+            'confidence_after': model_confidence_after,
+            'improvement': improvement
+        }
+        self.logger.info(json.dumps(log_entry))
+        
+    def log_active_learning_batch(self, batch_id: str, num_samples: int,
+                                 sampling_strategy: str, model_version: str):
+        """Log when active learning selects a batch for review"""
+        log_entry = {
+            'event': 'active_learning_batch',
+            'timestamp': datetime.now().isoformat(),
+            'batch_id': batch_id,
+            'num_samples': num_samples,
+            'sampling_strategy': sampling_strategy,
+            'model_version': model_version
+        }
+        self.logger.info(json.dumps(log_entry))
+        
+    def log_model_retraining(self, epoch: int, num_new_samples: int,
+                            improvement_accuracy: float, improvement_f1: float):
+        """Log when model is retrained with new feedback"""
+        log_entry = {
+            'event': 'model_retraining',
+            'timestamp': datetime.now().isoformat(),
+            'epoch': epoch,
+            'num_new_samples': num_new_samples,
+            'accuracy_improvement': improvement_accuracy,
+            'f1_improvement': improvement_f1
+        }
+        self.logger.info(json.dumps(log_entry))
+        
+    def log_queue_statistics(self, queue_size: int, by_priority: Dict[str, int],
+                            avg_wait_time: float, oldest_item_age: float):
+        """Log queue statistics periodically"""
+        log_entry = {
+            'event': 'queue_statistics',
+            'timestamp': datetime.now().isoformat(),
+            'queue_size': queue_size,
+            'by_priority': by_priority,
+            'avg_wait_time_seconds': avg_wait_time,
+            'oldest_item_age_seconds': oldest_item_age
+        }
+        self.logger.info(json.dumps(log_entry))
+        
+    def log_reviewer_performance(self, reviewer_id: str, reviews_today: int,
+                                avg_confidence: float, correction_rate: float,
+                                avg_review_time: float):
+        """Log reviewer performance metrics"""
+        log_entry = {
+            'event': 'reviewer_performance',
+            'timestamp': datetime.now().isoformat(),
+            'reviewer_id': reviewer_id,
+            'reviews_today': reviews_today,
+            'avg_confidence': avg_confidence,
+            'correction_rate': correction_rate,
+            'avg_review_time_seconds': avg_review_time
+        }
+        self.logger.info(json.dumps(log_entry))
+        
+    def log_escalation(self, item_id: str, reason: str, 
+                      original_priority: str, new_priority: str):
+        """Log when an item is escalated to higher priority"""
+        log_entry = {
+            'event': 'escalation',
+            'timestamp': datetime.now().isoformat(),
+            'item_id': item_id,
+            'reason': reason,
+            'original_priority': original_priority,
+            'new_priority': new_priority
+        }
+        self.logger.warning(json.dumps(log_entry))
+        
+    def log_error(self, error_type: str, message: str, 
+                 context: Optional[Dict] = None):
+        """Log errors in HITL system"""
+        log_entry = {
+            'event': 'error',
+            'timestamp': datetime.now().isoformat(),
+            'error_type': error_type,
+            'message': message,
+            'context': context or {}
+        }
+        self.logger.error(json.dumps(log_entry))
+        
+    def get_feedback_summary(self, days: int = 7) -> Dict[str, Any]:
+        """Get summary of feedback for the last N days"""
+        summary = {
+            'total_reviews': 0,
+            'corrections': 0,
+            'correction_rate': 0,
+            'avg_reviewer_confidence': 0,
+            'by_reviewer': {},
+            'by_class': {},
+            'daily_counts': []
+        }
+        
+        # Parse log file
+        if not self.log_path.exists():
+            return summary
+            
+        with open(self.log_path, 'r') as f:
+            for line in f:
+                try:
+                    log_entry = json.loads(line.strip())
+                    
+                    # Only process review_completed events
+                    if log_entry.get('event') != 'review_completed':
+                        continue
+                        
+                    # Check timestamp
+                    timestamp = datetime.fromisoformat(log_entry['timestamp'])
+                    if (datetime.now() - timestamp).days > days:
+                        continue
+                        
+                    summary['total_reviews'] += 1
+                    
+                    if log_entry.get('was_corrected', False):
+                        summary['corrections'] += 1
+                        
+                    # Reviewer stats
+                    reviewer = log_entry.get('reviewer_id', 'unknown')
+                    if reviewer not in summary['by_reviewer']:
+                        summary['by_reviewer'][reviewer] = {
+                            'reviews': 0,
+                            'corrections': 0,
+                            'total_confidence': 0
+                        }
+                    summary['by_reviewer'][reviewer]['reviews'] += 1
+                    if log_entry.get('was_corrected'):
+                        summary['by_reviewer'][reviewer]['corrections'] += 1
+                    summary['by_reviewer'][reviewer]['total_confidence'] += \
+                        log_entry.get('reviewer_confidence', 0)
+                        
+                    # Class stats
+                    original = log_entry.get('original_label', 'unknown')
+                    corrected = log_entry.get('corrected_label', 'unknown')
+                    
+                    if original not in summary['by_class']:
+                        summary['by_class'][original] = {'total': 0, 'corrected': 0}
+                    summary['by_class'][original]['total'] += 1
+                    if original != corrected:
+                        summary['by_class'][original]['corrected'] += 1
+                        
+                except (json.JSONDecodeError, KeyError) as e:
+                    continue
+                    
+        # Calculate rates
+        if summary['total_reviews'] > 0:
+            summary['correction_rate'] = summary['corrections'] / summary['total_reviews']
+            
+        for reviewer in summary['by_reviewer']:
+            reviews = summary['by_reviewer'][reviewer]['reviews']
+            summary['by_reviewer'][reviewer]['correction_rate'] = \
+                summary['by_reviewer'][reviewer]['corrections'] / reviews if reviews > 0 else 0
+            summary['by_reviewer'][reviewer]['avg_confidence'] = \
+                summary['by_reviewer'][reviewer]['total_confidence'] / reviews if reviews > 0 else 0
+                
+        for class_name in summary['by_class']:
+            total = summary['by_class'][class_name]['total']
+            summary['by_class'][class_name]['correction_rate'] = \
+                summary['by_class'][class_name]['corrected'] / total if total > 0 else 0
+                
+        return summary
+    
+    def export_feedback_data(self, output_path: str, format: str = 'csv'):
+        """Export feedback data for analysis"""
+        feedback_records = []
+        
+        if not self.log_path.exists():
+            print(f"No log file found at {self.log_path}")
+            return
+            
+        with open(self.log_path, 'r') as f:
+            for line in f:
+                try:
+                    log_entry = json.loads(line.strip())
+                    if log_entry.get('event') == 'review_completed':
+                        feedback_records.append(log_entry)
+                except json.JSONDecodeError:
+                    continue
+                    
+        if not feedback_records:
+            print("No feedback records found")
+            return
+            
+        df = pd.DataFrame(feedback_records)
+        
+        if format == 'csv':
+            df.to_csv(output_path, index=False)
+        elif format == 'json':
+            df.to_json(output_path, orient='records', indent=2)
+            
+        print(f"Exported {len(feedback_records)} feedback records to {output_path}")
+        
+        return df
+
+
+# Script to create demo HITL log entries
+def create_demo_hitl_logs():
+    """Create demonstration HITL log entries"""
+    
+    logger = HITLLogger("./logs")
+    
+    print("Creating demo HITL log entries...")
+    
+    # Simulate review requests
+    for i in range(50):
+        logger.log_review_request(
+            item_id=f"item_{i:04d}",
+            model_confidence=0.65 + 0.1 * np.random.randn(),
+            model_prediction=np.random.choice(['Normal', 'AFib', 'PVC', 'Bradycardia', 'Other']),
+            priority=np.random.choice(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], p=[0.1, 0.3, 0.4, 0.2]),
+            reason="Low confidence prediction"
+        )
+        
+    # Simulate review completions
+    reviewers = ['dr_smith', 'dr_jones', 'dr_wilson', 'nurse_brown']
+    
+    for i in range(45):
+        original = np.random.choice(['Normal', 'AFib', 'PVC', 'Bradycardia', 'Other'])
+        corrected = original
+        
+        # 20% correction rate
+        if np.random.random() < 0.2:
+            # Correct to different class
+            classes = ['Normal', 'AFib', 'PVC', 'Bradycardia', 'Other']
+            classes.remove(original)
+            corrected = np.random.choice(classes)
+            
+        logger.log_review_completion(
+            item_id=f"item_{i:04d}",
+            reviewer_id=np.random.choice(reviewers),
+            original_label=original,
+            corrected_label=corrected,
+            reviewer_confidence=0.85 + 0.1 * np.random.randn(),
+            time_taken_seconds=15 + 20 * np.random.random(),
+            notes="Sample review note" if np.random.random() > 0.7 else ""
+        )
+        
+    # Log model corrections
+    for i in range(10):
+        logger.log_model_correction(
+            item_id=f"item_{i:04d}",
+            original_prediction=np.random.choice(['Normal', 'AFib', 'PVC']),
+            corrected_label='Normal',
+            model_confidence_before=0.55 + 0.1 * np.random.random(),
+            model_confidence_after=0.75 + 0.1 * np.random.random()
+        )
+        
+    # Log active learning batches
+    for i in range(5):
+        logger.log_active_learning_batch(
+            batch_id=f"batch_{i:03d}",
+            num_samples=32,
+            sampling_strategy=np.random.choice(['uncertainty', 'margin', 'entropy', 'hybrid']),
+            model_version=f"v1.{i}.0"
+        )
+        
+    # Log model retraining events
+    for i in range(3):
+        logger.log_model_retraining(
+            epoch=50 + i * 10,
+            num_new_samples=100 + i * 50,
+            improvement_accuracy=0.02 + 0.01 * np.random.random(),
+            improvement_f1=0.015 + 0.01 * np.random.random()
+        )
+        
+    # Log queue statistics
+    for i in range(10):
+        logger.log_queue_statistics(
+            queue_size=np.random.randint(10, 100),
+            by_priority={
+                'CRITICAL': np.random.randint(0, 5),
+                'HIGH': np.random.randint(0, 15),
+                'MEDIUM': np.random.randint(0, 30),
+                'LOW': np.random.randint(0, 50)
+            },
+            avg_wait_time=60 + 120 * np.random.random(),
+            oldest_item_age=180 + 300 * np.random.random()
+        )
+        
+    # Log reviewer performance
+    for reviewer in reviewers:
+        logger.log_reviewer_performance(
+            reviewer_id=reviewer,
+            reviews_today=np.random.randint(10, 50),
+            avg_confidence=0.85 + 0.1 * np.random.random(),
+            correction_rate=0.15 + 0.1 * np.random.random(),
+            avg_review_time=20 + 15 * np.random.random()
+        )
+        
+    # Generate summary
+    summary = logger.get_feedback_summary(days=30)
+    print(f"\nFeedback Summary (last 30 days):")
+    print(f"  Total reviews: {summary['total_reviews']}")
+    print(f"  Corrections: {summary['corrections']}")
+    print(f"  Correction rate: {summary['correction_rate']:.2%}")
+    
+    # Export feedback data
+    logger.export_feedback_data("./logs/hitl_feedback_export.csv", format='csv')
+    
+    print(f"\n✅ Demo HITL logs created in ./logs/hitl_feedback.log")
+    print(f"   Exported data to ./logs/hitl_feedback_export.csv")
+
+
+class LogAnalyzer:
+    """Analyze and visualize log data"""
+    
+    def __init__(self, log_dir: str = "./logs"):
+        self.log_dir = Path(log_dir)
+        
+    def analyze_training_logs(self) -> Dict[str, Any]:
+        """Analyze training logs (TensorBoard events)"""
+        analysis = {
+            'training_runs': [],
+            'best_metrics': {},
+            'convergence_info': {}
+        }
+        
+        # Find all TensorBoard log directories
+        for log_dir in self.log_dir.glob("train_*"):
+            run_info = {
+                'name': log_dir.name,
+                'created': datetime.fromtimestamp(log_dir.stat().st_ctime),
+                'path': str(log_dir)
+            }
+            analysis['training_runs'].append(run_info)
+            
+        return analysis
+    
+    def analyze_hitl_logs(self) -> Dict[str, Any]:
+        """Analyze HITL feedback logs"""
+        log_path = self.log_dir / "hitl_feedback.log"
+        
+        if not log_path.exists():
+            return {'error': 'HITL log file not found'}
+            
+        analysis = {
+            'total_events': 0,
+            'events_by_type': {},
+            'time_range': {'start': None, 'end': None},
+            'reviewer_stats': {},
+            'correction_trend': []
+        }
+        
+        with open(log_path, 'r') as f:
+            for line in f:
+                try:
+                    log_entry = json.loads(line.strip())
+                    event_type = log_entry.get('event', 'unknown')
+                    
+                    analysis['events_by_type'][event_type] = \
+                        analysis['events_by_type'].get(event_type, 0) + 1
+                    analysis['total_events'] += 1
+                    
+                    # Track time range
+                    timestamp = log_entry.get('timestamp')
+                    if timestamp:
+                        dt = datetime.fromisoformat(timestamp)
+                        if analysis['time_range']['start'] is None or dt < analysis['time_range']['start']:
+                            analysis['time_range']['start'] = dt
+                        if analysis['time_range']['end'] is None or dt > analysis['time_range']['end']:
+                            analysis['time_range']['end'] = dt
+                            
+                except (json.JSONDecodeError, KeyError):
+                    continue
+                    
+        return analysis
+    
+    def generate_report(self) -> str:
+        """Generate a comprehensive log analysis report"""
+        training_analysis = self.analyze_training_logs()
+        hitl_analysis = self.analyze_hitl_logs()
+        
+        report = f"""
+        ========================================
+        ECG Anomaly Detection - Log Analysis Report
+        ========================================
+        
+        Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        
+        TRAINING LOGS
+        ----------------------------------------
+        Number of training runs: {len(training_analysis['training_runs'])}
+        
+        Training runs:
+        """
+        
+        for run in training_analysis['training_runs']:
+            report += f"  - {run['name']} (created: {run['created']})\n"
+            
+        report += f"""
+        HITL FEEDBACK LOGS
+        ----------------------------------------
+        Total events: {hitl_analysis.get('total_events', 0)}
+        
+        Events by type:
+        """
+        
+        for event_type, count in hitl_analysis.get('events_by_type', {}).items():
+            report += f"  - {event_type}: {count}\n"
+            
+        if hitl_analysis.get('time_range', {}).get('start'):
+            report += f"""
+        Time range: {hitl_analysis['time_range']['start']} to {hitl_analysis['time_range']['end']}
+        Duration: {(hitl_analysis['time_range']['end'] - hitl_analysis['time_range']['start']).days} days
+        """
+            
+        report += "\n        ========================================\n"
+        
+        return report
+
+
+if __name__ == "__main__":
+    # Create demo logs
+    create_demo_tensorboard_logs()
+    create_demo_hitl_logs()
+    
+    # Analyze logs
+    analyzer = LogAnalyzer("./logs")
+    report = analyzer.generate_report()
+    print(report)
+    
+    # Save report
+    with open("./logs/log_analysis_report.txt", "w") as f:
+        f.write(report)
+        
+    print("\n✅ Log analysis report saved to ./logs/log_analysis_report.txt")

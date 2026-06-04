@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECG Anomaly Detection Dashboard</title>
+    
+    <!-- Plotly for interactive charts -->
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    
+    <!-- Socket.IO client -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <!-- Tabler Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons@latest/tabler-icons.min.css">
+    
+    <style>
+        :root {
+            --color-text-primary: #1e293b;
+            --color-text-secondary: #64748b;
+            --color-text-tertiary: #94a3b8;
+            --color-background-primary: #ffffff;
+            --color-background-secondary: #f8fafc;
+            --color-border-secondary: #e2e8f0;
+            --color-border-tertiary: #cbd5e1;
+            --border-radius-md: 8px;
+            --border-radius-lg: 12px;
+            --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --color-text-primary: #f1f5f9;
+                --color-text-secondary: #cbd5e1;
+                --color-text-tertiary: #94a3b8;
+                --color-background-primary: #0f172a;
+                --color-background-secondary: #1e293b;
+                --color-border-secondary: #334155;
+                --color-border-tertiary: #475569;
+            }
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { width: 100%; height: 100%; }
+        body { 
+            background: var(--color-background-primary);
+            color: var(--color-text-primary);
+            font-family: var(--font-sans);
+        }
+
+        .dash { font-family: var(--font-sans); padding: 0 0 24px; }
+
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 18px 20px 16px; border-bottom: 0.5px solid var(--color-border-tertiary);
+            margin-bottom: 20px;
+        }
+        .header-left { display: flex; align-items: center; gap: 10px; }
+        .header-title { font-size: 16px; font-weight: 500; color: var(--color-text-primary); }
+        .header-sub { font-size: 12px; color: var(--color-text-secondary); margin-top: 2px; }
+        .badge {
+            font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 20px;
+            display: inline-flex; align-items: center; gap: 5px;
+        }
+        .badge-live { background: #EAF3DE; color: #3B6D11; }
+        .badge-idle { background: #F1EFE8; color: #5F5E5A; }
+        .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+        .dot-pulse { animation: dotpulse 1.2s ease-in-out infinite; }
+        @keyframes dotpulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+        .header-badges { display: flex; gap: 8px; align-items: center; }
+
+        .metrics-row {
+            display: grid; grid-template-columns: repeat(4, minmax(0,1fr));
+            gap: 10px; padding: 0 20px; margin-bottom: 16px;
+        }
+        .metric {
+            background: var(--color-background-secondary);
+            border-radius: var(--border-radius-md);
+            padding: 14px 16px;
+            border: 0.5px solid var(--color-border-tertiary);
+        }
+        .metric-label { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 6px; letter-spacing: .02em; }
+        .metric-val { font-size: 22px; font-weight: 500; color: var(--color-text-primary); line-height: 1; }
+        .metric-val.accent { color: #D85A30; }
+        .metric-val.safe { color: #3B6D11; }
+        .metric-val.warn { color: #BA7517; }
+
+        .main-row {
+            display: grid; grid-template-columns: minmax(0,1.7fr) minmax(0,1fr);
+            gap: 14px; padding: 0 20px; margin-bottom: 14px;
+        }
+
+        .card {
+            background: var(--color-background-primary);
+            border: 0.5px solid var(--color-border-tertiary);
+            border-radius: var(--border-radius-lg);
+            overflow: hidden;
+        }
+        .card-head {
+            padding: 14px 16px 12px;
+            border-bottom: 0.5px solid var(--color-border-tertiary);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .card-head-title {
+            font-size: 13px; font-weight: 500; color: var(--color-text-primary);
+            display: flex; align-items: center; gap: 7px;
+        }
+        .card-head-title i { font-size: 15px; color: var(--color-text-secondary); }
+        .card-body { padding: 14px 16px; }
+
+        /* ECG waveform */
+        #ecg-canvas {
+            width: 100%; height: 180px; display: block;
+            background: var(--color-background-secondary);
+            border-radius: var(--border-radius-md);
+        }
+        .ecg-controls {
+            display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;
+        }
+        .btn {
+            font-size: 12px; font-weight: 500; padding: 6px 14px;
+            border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary);
+            background: var(--color-background-primary); color: var(--color-text-primary);
+            cursor: pointer; display: flex; align-items: center; gap: 5px; transition: background .15s;
+        }
+        .btn:hover { background: var(--color-background-secondary); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn.active { background: #EAF3DE; border-color: #C0DD97; color: #3B6D11; }
+        .btn.stop { background: #FCEBEB; border-color: #F09595; color: #791F1F; }
+
+        /* Prediction panel */
+        .pred-state {
+            text-align: center; padding: 20px 12px 16px;
+        }
+        .pred-chip {
+            display: inline-block; font-size: 11px; font-weight: 500;
+            padding: 3px 10px; border-radius: 20px; margin-bottom: 14px;
+        }
+        .pred-chip.normal { background: #EAF3DE; color: #3B6D11; }
+        .pred-chip.anomaly { background: #FCEBEB; color: #791F1F; }
+        .pred-name { font-size: 26px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 4px; line-height: 1.1; }
+        .pred-conf { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 14px; }
+        .conf-track { height: 6px; background: var(--color-background-secondary); border-radius: 3px; overflow: hidden; margin: 0 0 8px; }
+        .conf-fill { height: 100%; border-radius: 3px; transition: width .5s ease, background .5s; }
+        .conf-fill.high { background: #639922; }
+        .conf-fill.mid { background: #BA7517; }
+        .conf-fill.low { background: #E24B4A; }
+
+        .pred-status {
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+            font-size: 12px; font-weight: 500; padding: 8px 16px;
+            border-radius: var(--border-radius-md); width: fit-content; margin: 0 auto;
+        }
+        .pred-status.ok { background: #EAF3DE; color: #3B6D11; }
+        .pred-status.alert { background: #FCEBEB; color: #791F1F; }
+
+        /* Bottom row */
+        .bottom-row {
+            display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+            gap: 14px; padding: 0 20px; margin-bottom: 14px;
+        }
+
+        /* Class distribution */
+        .dist-list { display: flex; flex-direction: column; gap: 10px; }
+        .dist-row { display: flex; align-items: center; gap: 10px; }
+        .dist-label { font-size: 12px; color: var(--color-text-secondary); width: 72px; flex-shrink: 0; }
+        .dist-track { flex: 1; height: 6px; background: var(--color-background-secondary); border-radius: 3px; overflow: hidden; }
+        .dist-bar { height: 100%; border-radius: 3px; transition: width .6s ease; }
+        .dist-count { font-size: 12px; font-weight: 500; color: var(--color-text-primary); width: 24px; text-align: right; }
+
+        /* Review queue */
+        .review-empty { font-size: 13px; color: var(--color-text-tertiary); text-align: center; padding: 18px 0; }
+
+        /* History table */
+        .hist-wrap { padding: 0 20px; }
+        .hist-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .hist-table th {
+            padding: 8px 10px; text-align: left; font-weight: 500; font-size: 11px;
+            color: var(--color-text-secondary); letter-spacing: .02em;
+            border-bottom: 0.5px solid var(--color-border-tertiary);
+        }
+        .hist-table td {
+            padding: 9px 10px;
+            border-bottom: 0.5px solid var(--color-border-tertiary);
+            color: var(--color-text-primary);
+        }
+        .hist-table tr:last-child td { border-bottom: none; }
+        .pill {
+            display: inline-block; font-size: 11px; font-weight: 500;
+            padding: 2px 8px; border-radius: 20px;
+        }
+        .pill-normal { background: #EAF3DE; color: #3B6D11; }
+        .pill-afib   { background: #FAECE7; color: #993C1D; }
+        .pill-pvc    { background: #FBEAF0; color: #72243E; }
+        .pill-brady  { background: #E6F1FB; color: #185FA5; }
+        .pill-review { background: #FAEEDA; color: #854F0B; }
+        .pill-ok     { background: #F1EFE8; color: #5F5E5A; }
+
+        /* Settings */
+        .settings-row { padding: 0 20px; margin-top: 14px; }
+        .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .sg-item label { font-size: 12px; color: var(--color-text-secondary); display: block; margin-bottom: 6px; }
+        .sg-item input[type=range],
+        .sg-item input[type=number],
+        .sg-item select { width: 100%; padding: 6px 8px; border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); background: var(--color-background-primary); color: var(--color-text-primary); font-size: 13px; }
+        .settings-actions { display: flex; gap: 8px; margin-top: 14px; }
+        .btn-primary { background: #E6F1FB; border-color: #85B7EB; color: #0C447C; }
+        .btn-primary:hover { background: #B5D4F4; }
+
+        .section-title {
+            font-size: 12px; font-weight: 500; color: var(--color-text-secondary);
+            letter-spacing: .04em; text-transform: uppercase;
+            padding: 0 20px; margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+<div class="dash">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="7" fill="#FCEBEB"/>
+        <path d="M4 14h4l2.5-5 3 9 3-12 2.5 8H24" stroke="#E24B4A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+      <div>
+        <div class="header-title">ECG Anomaly Detection</div>
+        <div class="header-sub">Real-time monitoring system</div>
+      </div>
+    </div>
+    <div class="header-badges">
+      <span class="badge badge-live" id="conn-badge"><span class="dot dot-pulse"></span>Connected</span>
+      <span class="badge badge-idle" id="stream-badge">Stream inactive</span>
+    </div>
+  </div>
+
+  <!-- Metrics -->
+  <div class="metrics-row">
+    <div class="metric">
+      <div class="metric-label">Total predictions</div>
+      <div class="metric-val" id="m-total">0</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Avg confidence</div>
+      <div class="metric-val safe" id="m-conf">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Heart rate</div>
+      <div class="metric-val accent" id="m-hr">— <span style="font-size:13px;font-weight:400;color:var(--color-text-secondary)">bpm</span></div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Needs review</div>
+      <div class="metric-val warn" id="m-review">0</div>
+    </div>
+  </div>
+
+  <!-- Main row: waveform + prediction -->
+  <div class="main-row">
+    <div class="card">
+      <div class="card-head">
+        <span class="card-head-title"><i class="ti ti-chart-line"></i>Real-time ECG waveform</span>
+        <span class="badge badge-idle" id="ecg-status-badge" style="font-size:11px">Idle</span>
+      </div>
+      <div class="card-body">
+        <canvas id="ecg-canvas"></canvas>
+        <div class="ecg-controls">
+          <button class="btn active" id="btn-start" onclick="startStream()"><i class="ti ti-player-play"></i>Start</button>
+          <button class="btn stop" id="btn-stop" onclick="stopStream()" disabled><i class="ti ti-player-pause"></i>Stop</button>
+          <button class="btn" onclick="clearWaveform()"><i class="ti ti-eraser"></i>Clear</button>
+          <button class="btn" onclick="exportWaveform()"><i class="ti ti-download"></i>Export</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <span class="card-head-title"><i class="ti ti-brain"></i>Current prediction</span>
+      </div>
+      <div class="pred-state">
+        <span class="pred-chip normal" id="pred-chip">Normal sinus rhythm</span>
+        <div class="pred-name" id="pred-class">---</div>
+        <div class="pred-conf" id="pred-conf">Awaiting data</div>
+        <div class="conf-track"><div class="conf-fill high" id="conf-bar" style="width:0%"></div></div>
+        <div class="pred-status ok" id="pred-status">
+          <i class="ti ti-check"></i> Normal
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom row: distribution + queue -->
+  <div class="bottom-row">
+    <div class="card">
+      <div class="card-head">
+        <span class="card-head-title"><i class="ti ti-chart-donut"></i>Class distribution</span>
+      </div>
+      <div class="card-body">
+        <div class="dist-list" id="dist-list">
+          <div class="dist-row">
+            <span class="dist-label">Normal</span>
+            <div class="dist-track"><div class="dist-bar" id="db-normal" style="width:0%;background:#639922"></div></div>
+            <span class="dist-count" id="dc-normal">0</span>
+          </div>
+          <div class="dist-row">
+            <span class="dist-label">AFib</span>
+            <div class="dist-track"><div class="dist-bar" id="db-afib" style="width:0%;background:#D85A30"></div></div>
+            <span class="dist-count" id="dc-afib">0</span>
+          </div>
+          <div class="dist-row">
+            <span class="dist-label">PVC</span>
+            <div class="dist-track"><div class="dist-bar" id="db-pvc" style="width:0%;background:#D4537E"></div></div>
+            <span class="dist-count" id="dc-pvc">0</span>
+          </div>
+          <div class="dist-row">
+            <span class="dist-label">Bradycardia</span>
+            <div class="dist-track"><div class="dist-bar" id="db-brady" style="width:0%;background:#185FA5"></div></div>
+            <span class="dist-count" id="dc-brady">0</span>
+          </div>
+          <div class="dist-row">
+            <span class="dist-label">Other</span>
+            <div class="dist-track"><div class="dist-bar" id="db-other" style="width:0%;background:#888780"></div></div>
+            <span class="dist-count" id="dc-other">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <span class="card-head-title"><i class="ti ti-clipboard-list"></i>Review queue</span>
+        <span class="badge badge-idle" id="queue-count">0 pending</span>
+      </div>
+      <div class="card-body" id="review-queue">
+        <div class="review-empty">No pending reviews</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="hist-wrap">
+    <div class="card">
+      <div class="card-head">
+        <span class="card-head-title"><i class="ti ti-history"></i>Prediction history</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table class="hist-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Prediction</th>
+              <th>Confidence</th>
+              <th>Anomaly</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="hist-body">
+            <tr><td colspan="5" style="text-align:center;color:var(--color-text-tertiary);padding:20px 0">No predictions yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="settings-row">
+    <div class="card">
+      <div class="card-head">
+        <span class="card-head-title"><i class="ti ti-settings"></i>Settings</span>
+      </div>
+      <div class="card-body">
+        <div class="settings-grid">
+          <div class="sg-item">
+            <label>Sampling rate (Hz)</label>
+            <input type="number" id="sampling-rate" value="360" step="10" min="60" max="1000">
+          </div>
+          <div class="sg-item">
+            <label>Heart rate (BPM)</label>
+            <input type="number" id="heart-rate" value="75" step="5" min="40" max="200">
+          </div>
+        </div>
+        <div class="settings-actions">
+          <button class="btn btn-primary" onclick="applySettings()">Apply Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// ECG Dashboard Real-time Visualization
+// ═══════════════════════════════════════════════════════════════════════════
+
+const CLASSES = [
+  { name: 'Normal', label: 'normal', conf: [0.85, 0.98], anomaly: [0.0, 0.1], review: false },
+  { name: 'AFib', label: 'afib', conf: [0.65, 0.95], anomaly: [0.4, 0.8], review: true },
+  { name: 'PVC', label: 'pvc', conf: [0.70, 0.92], anomaly: [0.3, 0.7], review: true },
+  { name: 'Bradycardia', label: 'brady', conf: [0.75, 0.94], anomaly: [0.2, 0.6], review: true }
+];
+
+// ECG Rendering
+const canvas = document.getElementById('ecg-canvas');
+const ctx = canvas.getContext('2d');
+let wavePoints = [];
+let waveColor = '#10b981';
+let t = 0;
+let streaming = false;
+let animFrame = null;
+let totalPreds = 0;
+let confSum = 0;
+let reviewCount = 0;
+let distCounts = {};
+
+// Connection status
+let isConnected = false;
+
+function rand(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function ecgSample(t) {
+  const mod = (t % 2.5) / 2.5;
+  const P = 0.15*Math.exp(-Math.pow(mod-0.7,2)/0.04);
+  const Q = -0.05*Math.exp(-Math.pow(mod-1.1,2)/0.005);
+  const R = 1.0*Math.exp(-Math.pow(mod-1.2,2)/0.003);
+  const S = -0.15*Math.exp(-Math.pow(mod-1.35,2)/0.005);
+  const T = 0.25*Math.exp(-Math.pow(mod-1.8,2)/0.06);
+  return P+Q+R+S+T;
+}
+
+function drawECG(){
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+
+  // Grid
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-border-tertiary') || 'rgba(0,0,0,0.06)';
+  ctx.lineWidth = 0.5;
+  for(let x=0;x<W;x+=20){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y=0;y<H;y+=20){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  if(wavePoints.length < 2) return;
+
+  // Waveform
+  ctx.shadowColor = waveColor;
+  ctx.shadowBlur = 4;
+  ctx.strokeStyle = waveColor;
+  ctx.lineWidth = 1.8;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  for(let i=0;i<wavePoints.length;i++){
+    const px = (i/wavePoints.length)*W;
+    const py = H/2 - wavePoints[i]*H*0.35;
+    i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function resizeCanvas(){
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width*devicePixelRatio;
+  canvas.height = rect.height*devicePixelRatio;
+  ctx.scale(devicePixelRatio,devicePixelRatio);
+  drawECG();
+}
+
+function streamTick(){
+  t += 0.04;
+  const sample = ecgSample(t) + rand(-0.02, 0.02);
+  wavePoints.push(sample);
+  if(wavePoints.length > 360) wavePoints.shift();
+  drawECG();
+
+  // Update HR
+  const bpm = Math.round(rand(60,100));
+  document.getElementById('m-hr').innerHTML = bpm + ' <span style="font-size:13px;font-weight:400;color:var(--color-text-secondary)">bpm</span>';
+
+  animFrame = requestAnimationFrame(streamTick);
+}
+
+// Prediction simulation
+let predInterval = null;
+
+function makePrediction(){
+  const cls = CLASSES[Math.floor(Math.random() < 0.72 ? 0 : 1 + Math.random()*3)];
+  const conf = rand(cls.conf[0], cls.conf[1]);
+  const anomaly = rand(cls.anomaly[0], cls.anomaly[1]);
+  totalPreds++;
+  confSum += conf;
+  if(cls.review && conf < 0.80) reviewCount++;
+
+  // Update prediction panel
+  const name = document.getElementById('pred-class');
+  const confEl = document.getElementById('pred-conf');
+  const bar = document.getElementById('conf-bar');
+  const chip = document.getElementById('pred-chip');
+  const status = document.getElementById('pred-status');
+
+  name.textContent = cls.name;
+  confEl.textContent = Math.round(conf*100) + '% confidence';
+  bar.style.width = Math.round(conf*100)+'%';
+
+  const tier = conf>0.8?'high':conf>0.6?'mid':'low';
+  bar.className = 'conf-fill ' + tier;
+
+  if(cls.label==='normal'){
+    chip.className='pred-chip normal'; chip.textContent='Normal sinus rhythm';
+    status.className='pred-status ok'; status.innerHTML='<i class="ti ti-check"></i> Normal';
+  } else {
+    chip.className='pred-chip anomaly'; chip.textContent='Anomaly detected';
+    status.className='pred-status alert'; status.innerHTML='<i class="ti ti-alert-triangle"></i> Review needed';
+  }
+
+  // Update metrics
+  document.getElementById('m-total').textContent = totalPreds;
+  document.getElementById('m-conf').textContent = Math.round(confSum/totalPreds*100)+'%';
+  document.getElementById('m-review').textContent = reviewCount;
+
+  // Update distribution
+  distCounts[cls.label] = (distCounts[cls.label]||0)+1;
+  const total = Object.values(distCounts).reduce((a,b)=>a+b,0);
+  Object.keys(distCounts).forEach(k=>{
+    const count = distCounts[k];
+    const pct = Math.round(100*count/total);
+    document.getElementById('db-'+k).style.width = pct+'%';
+    document.getElementById('dc-'+k).textContent = count;
+  });
+
+  // Update history
+  const tbody = document.getElementById('hist-body');
+  if(tbody.innerHTML.includes('No predictions yet')) {
+    tbody.innerHTML = '';
+  }
+  const row = tbody.insertRow(0);
+  row.innerHTML = `
+    <td>${new Date().toLocaleTimeString()}</td>
+    <td><span class="pill pill-${cls.label}">${cls.name}</span></td>
+    <td>${Math.round(conf*100)}%</td>
+    <td>${Math.round(anomaly*100)}%</td>
+    <td>${conf < 0.7 ? '⚠️ Review' : '✓ OK'}</td>
+  `;
+  if(tbody.children.length > 10) tbody.deleteRow(tbody.children.length-1);
+}
+
+function startStream(){
+  if(streaming) return;
+  streaming = true;
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-stop').disabled = false;
+  document.getElementById('ecg-status-badge').className='badge badge-live';
+  document.getElementById('ecg-status-badge').textContent='Recording';
+  document.getElementById('stream-badge').className='badge badge-live';
+  document.getElementById('stream-badge').innerHTML='<span class="dot dot-pulse"></span>Streaming';
+  
+  animFrame = requestAnimationFrame(streamTick);
+  predInterval = setInterval(makePrediction, 1500);
+}
+
+function stopStream(){
+  streaming = false;
+  cancelAnimationFrame(animFrame);
+  clearInterval(predInterval);
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled = true;
+  document.getElementById('ecg-status-badge').className='badge badge-idle';
+  document.getElementById('ecg-status-badge').textContent='Paused';
+  document.getElementById('stream-badge').className='badge badge-idle';
+  document.getElementById('stream-badge').textContent='Stream inactive';
+}
+
+function clearWaveform(){
+  wavePoints=[];
+  ctx.clearRect(0,0,canvas.width/devicePixelRatio,canvas.height/devicePixelRatio);
+}
+
+function exportWaveform(){
+  const link=document.createElement('a');
+  link.download='ecg_waveform.png';
+  link.href=canvas.toDataURL();
+  link.click();
+}
+
+function applySettings(){
+  alert('Settings applied successfully!');
+}
+
+// Initialize
+window.addEventListener('resize', resizeCanvas);
+setTimeout(resizeCanvas, 100);
+</script>
+</body>
+</html>

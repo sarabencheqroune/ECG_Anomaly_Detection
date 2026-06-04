@@ -1,0 +1,93 @@
+"""
+Autoencoder model checkpoint management
+"""
+
+import torch
+import numpy as np
+from pathlib import Path
+
+
+class AutoencoderCheckpoint:
+    """
+    Specialized checkpoint manager for autoencoder models
+    """
+    
+    def __init__(self, checkpoint_path: str = "./models/autoencoder.pth"):
+        self.checkpoint_path = Path(checkpoint_path)
+        
+    def create_demo_checkpoint(self):
+        """Create a demonstration autoencoder checkpoint structure"""
+        
+        checkpoint = {
+            'model_state_dict': None,  # Would contain actual weights
+            'config': {
+                'input_dim': 187,
+                'latent_dim': 32,
+                'encoder_layers': [187, 128, 64, 32],
+                'decoder_layers': [32, 64, 128, 187],
+                'activation': 'relu',
+                'dropout': 0.2
+            },
+            'training_info': {
+                'epochs_trained': 80,
+                'best_epoch': 72,
+                'final_reconstruction_loss': 0.0234,
+                'best_reconstruction_loss': 0.0218,
+                'anomaly_threshold': 0.045  # 95th percentile
+            },
+            'anomaly_stats': {
+                'mean_reconstruction_error': 0.028,
+                'std_reconstruction_error': 0.012,
+                'threshold_percentile': 95,
+                'threshold_value': 0.045
+            },
+            'normalization_params': {
+                'mean': 0.0,
+                'std': 1.0,
+                'min': -2.5,
+                'max': 2.8
+            },
+            'timestamp': '2024-01-15T10:30:00',
+            'version': '1.0.0'
+        }
+        
+        return checkpoint
+    
+    def save_checkpoint(self, model, config: dict, training_info: dict):
+        """Save autoencoder checkpoint"""
+        checkpoint = {
+            'model_state_dict': model.state_dict(),
+            'config': config,
+            'training_info': training_info,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        torch.save(checkpoint, self.checkpoint_path)
+        print(f"Autoencoder checkpoint saved to {self.checkpoint_path}")
+        
+    def load_checkpoint(self, model, device='cpu'):
+        """Load autoencoder checkpoint"""
+        if not self.checkpoint_path.exists():
+            print(f"Checkpoint not found: {self.checkpoint_path}")
+            return None
+            
+        checkpoint = torch.load(self.checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        
+        return checkpoint
+
+
+# Create demo checkpoint
+if __name__ == "__main__":
+    manager = AutoencoderCheckpoint()
+    demo_checkpoint = manager.create_demo_checkpoint()
+    
+    # Save demo checkpoint (as JSON for illustration, actual would be .pth)
+    import json
+    with open("./models/autoencoder_metadata.json", "w") as f:
+        # Convert checkpoint to serializable format
+        serializable = {k: v for k, v in demo_checkpoint.items() 
+                       if not callable(v)}
+        json.dump(serializable, f, indent=2)
+        
+    print("✅ Autoencoder metadata saved to ./models/autoencoder_metadata.json")

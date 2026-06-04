@@ -1,0 +1,124 @@
+"""
+Classifier model checkpoint management
+"""
+
+import torch
+from pathlib import Path
+from datetime import datetime
+import json
+
+
+class ClassifierCheckpoint:
+    """
+    Specialized checkpoint manager for classifier models
+    """
+    
+    def __init__(self, checkpoint_path: str = "./models/classifier.pth"):
+        self.checkpoint_path = Path(checkpoint_path)
+        
+    def create_demo_checkpoint(self):
+        """Create a demonstration classifier checkpoint structure"""
+        
+        checkpoint = {
+            'model_state_dict': None,  # Would contain actual weights
+            'config': {
+                'model_type': '1d_cnn',
+                'input_dim': 187,
+                'num_classes': 5,
+                'conv_channels': [32, 64, 128],
+                'kernel_sizes': [5, 5, 3],
+                'dropout': 0.2,
+                'use_batch_norm': True
+            },
+            'training_info': {
+                'epochs_trained': 100,
+                'best_epoch': 87,
+                'final_accuracy': 0.9523,
+                'best_accuracy': 0.9587,
+                'final_loss': 0.1245,
+                'best_loss': 0.1189
+            },
+            'class_mapping': {
+                0: 'Normal',
+                1: 'AFib',
+                2: 'PVC',
+                3: 'Bradycardia',
+                4: 'Other'
+            },
+            'performance_metrics': {
+                'accuracy': 0.9523,
+                'precision_macro': 0.9487,
+                'recall_macro': 0.9512,
+                'f1_macro': 0.9498,
+                'auc_roc_macro': 0.9876
+            },
+            'per_class_metrics': {
+                'Normal': {'precision': 0.96, 'recall': 0.97, 'f1': 0.965},
+                'AFib': {'precision': 0.94, 'recall': 0.93, 'f1': 0.935},
+                'PVC': {'precision': 0.95, 'recall': 0.94, 'f1': 0.945},
+                'Bradycardia': {'precision': 0.93, 'recall': 0.94, 'f1': 0.935},
+                'Other': {'precision': 0.92, 'recall': 0.91, 'f1': 0.915}
+            },
+            'calibration': {
+                'temperature': 1.05,
+                'ece': 0.023,
+                'calibration_curve': None  # Would contain calibration data
+            },
+            'timestamp': '2024-01-15T10:30:00',
+            'version': '2.0.0'
+        }
+        
+        return checkpoint
+    
+    def save_checkpoint(self, model, config: dict, training_info: dict, 
+                       metrics: dict):
+        """Save classifier checkpoint"""
+        checkpoint = {
+            'model_state_dict': model.state_dict(),
+            'config': config,
+            'training_info': training_info,
+            'metrics': metrics,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        torch.save(checkpoint, self.checkpoint_path)
+        print(f"Classifier checkpoint saved to {self.checkpoint_path}")
+        
+    def load_checkpoint(self, model, device='cpu'):
+        """Load classifier checkpoint"""
+        if not self.checkpoint_path.exists():
+            print(f"Checkpoint not found: {self.checkpoint_path}")
+            return None
+            
+        checkpoint = torch.load(self.checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        
+        return checkpoint
+    
+    def get_model_info(self) -> dict:
+        """Get information about the saved classifier"""
+        if not self.checkpoint_path.exists():
+            return {'exists': False}
+            
+        # Load metadata (if saved separately)
+        metadata_path = self.checkpoint_path.with_suffix('.json')
+        if metadata_path.exists():
+            with open(metadata_path, 'r') as f:
+                return json.load(f)
+                
+        return {'exists': True, 'path': str(self.checkpoint_path)}
+
+
+# Create demo checkpoint
+if __name__ == "__main__":
+    manager = ClassifierCheckpoint()
+    demo_checkpoint = manager.create_demo_checkpoint()
+    
+    # Save metadata
+    metadata = {k: v for k, v in demo_checkpoint.items() 
+               if k != 'model_state_dict'}
+    
+    with open("./models/classifier_metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2)
+        
+    print("✅ Classifier metadata saved to ./models/classifier_metadata.json")

@@ -1,0 +1,220 @@
+"""
+Model checkpoint manager for ECG anomaly detection
+This script demonstrates how to create and manage model checkpoint files
+"""
+
+import torch
+import numpy as np
+from pathlib import Path
+from datetime import datetime
+import yaml
+import json
+
+# Script to demonstrate checkpoint structure
+def create_demo_checkpoint():
+    """Create a demonstration checkpoint file"""
+    
+    # Example checkpoint structure
+    checkpoint = {
+        'epoch': 50,
+        'model_state_dict': None,  # Would contain actual model weights
+        'optimizer_state_dict': None,
+        'best_metric': 0.9523,
+        'config': {
+            'model_type': 'cnn',
+            'input_dim': 187,
+            'num_classes': 5,
+            'learning_rate': 0.001,
+            'batch_size': 64
+        },
+        'history': {
+            'train_loss': [0.523, 0.412, 0.345, 0.298, 0.267],
+            'val_loss': [0.489, 0.398, 0.335, 0.291, 0.262],
+            'train_accuracy': [0.78, 0.82, 0.85, 0.87, 0.89],
+            'val_accuracy': [0.80, 0.83, 0.86, 0.88, 0.90]
+        },
+        'timestamp': datetime.now().isoformat(),
+        'model_info': {
+            'total_parameters': 124567,
+            'trainable_parameters': 124567,
+            'model_architecture': '1D-CNN with 3 conv blocks'
+        },
+        'class_mapping': {
+            0: 'Normal',
+            1: 'AFib',
+            2: 'PVC',
+            3: 'Bradycardia',
+            4: 'Other'
+        }
+    }
+    
+    return checkpoint
+
+
+class ModelCheckpointManager:
+    """
+    Manage model checkpoints with versioning and metadata
+    """
+    
+    def __init__(self, checkpoint_dir: str = "./models"):
+        self.checkpoint_dir = Path(checkpoint_dir)
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        
+    def save_checkpoint(self, model, optimizer, epoch: int, metrics: dict, 
+                       config: dict, is_best: bool = False, 
+                       filename: str = None):
+        """
+        Save model checkpoint
+        
+        Args:
+            model: PyTorch model
+            optimizer: Optimizer instance
+            epoch: Current epoch
+            metrics: Dictionary of metrics
+            config: Training configuration
+            is_best: Whether this is the best model so far
+            filename: Custom filename (optional)
+        """
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'metrics': metrics,
+            'config': config,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Save regular checkpoint
+        if filename is None:
+            filename = f"checkpoint_epoch_{epoch}.pth"
+            
+        filepath = self.checkpoint_dir / filename
+        torch.save(checkpoint, filepath)
+        print(f"Checkpoint saved to {filepath}")
+        
+        # Save best model separately
+        if is_best:
+            best_path = self.checkpoint_dir / "best_model.pth"
+            torch.save(checkpoint, best_path)
+            print(f"Best model saved to {best_path}")
+            
+        # Save metadata
+        self._save_metadata(checkpoint, filepath.stem)
+        
+    def load_checkpoint(self, filename: str, model, optimizer=None, 
+                       device='cpu'):
+        """
+        Load model checkpoint
+        
+        Args:
+            filename: Checkpoint filename
+            model: Model instance to load weights into
+            optimizer: Optimizer instance (optional)
+            device: Device to load to
+            
+        Returns:
+            Checkpoint dictionary
+        """
+        filepath = self.checkpoint_dir / filename
+        
+        if not filepath.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {filepath}")
+            
+        checkpoint = torch.load(filepath, map_location=device)
+        
+        # Load model weights
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.to(device)
+        
+        # Load optimizer if provided
+        if optimizer and 'optimizer_state_dict' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            
+        print(f"Loaded checkpoint from {filepath} (epoch {checkpoint.get('epoch', 'unknown')})")
+        
+        return checkpoint
+    
+    def _save_metadata(self, checkpoint: dict, checkpoint_name: str):
+        """Save checkpoint metadata as JSON"""
+        metadata = {
+            'checkpoint_name': checkpoint_name,
+            'epoch': checkpoint.get('epoch'),
+            'timestamp': checkpoint.get('timestamp'),
+            'metrics': checkpoint.get('metrics', {}),
+            'config': checkpoint.get('config', {})
+        }
+        
+        metadata_path = self.checkpoint_dir / f"{checkpoint_name}_metadata.json"
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+            
+    def list_checkpoints(self) -> list:
+        """List all available checkpoints"""
+        checkpoints = []
+        
+        for filepath in self.checkpoint_dir.glob("*.pth"):
+            stat = filepath.stat()
+            checkpoints.append({
+                'filename': filepath.name,
+                'size_mb': stat.st_size / (1024 * 1024),
+                'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
+            })
+            
+        return checkpoints
+    
+    def get_best_checkpoint(self) -> dict:
+        """Get information about the best checkpoint"""
+        best_path = self.checkpoint_dir / "best_model.pth"
+        
+        if best_path.exists():
+            stat = best_path.stat()
+            return {
+                'filename': 'best_model.pth',
+                'path': str(best_path),
+                'size_mb': stat.st_size / (1024 * 1024),
+                'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
+            }
+        return None
+
+
+# Script to create demonstration checkpoint files
+if __name__ == "__main__":
+    import torch.nn as nn
+    
+    # Create dummy model for demonstration
+    class DummyModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.fc = nn.Linear(187, 5)
+            
+        def forward(self, x):
+            return self.fc(x)
+            
+    # Initialize manager
+    manager = ModelCheckpointManager("./models")
+    
+    # Create dummy model and optimizer
+    model = DummyModel()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    
+    # Create configuration
+    config = {
+        'model_type': 'cnn',
+        'input_dim': 187,
+        'num_classes': 5,
+        'learning_rate': 0.001,
+        'batch_size': 64,
+        'epochs': 100
+    }
+    
+    # Save a demo checkpoint
+    metrics = {'accuracy': 0.95, 'loss': 0.12}
+    manager.save_checkpoint(model, optimizer, epoch=50, metrics=metrics, 
+                           config=config, is_best=True)
+    
+    # List checkpoints
+    print("\nAvailable checkpoints:")
+    for cp in manager.list_checkpoints():
+        print(f"  {cp['filename']} ({cp['size_mb']:.2f} MB)")
+        
+    print("\n✅ Demo checkpoint files created in ./models/")

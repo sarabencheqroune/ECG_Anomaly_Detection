@@ -1,0 +1,241 @@
+# Logging Configuration for ECG Anomaly Detection Project
+# This file defines all logging settings for the project
+
+version: 1.0
+date: 2024-01-15
+
+# Log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
+root_level: INFO
+
+# Log format
+formatters:
+  detailed:
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+  
+  simple:
+    format: "%(asctime)s - %(levelname)s - %(message)s"
+    datefmt: "%H:%M:%S"
+  
+  json:
+    format: '{"timestamp": "%(asctime)s", "name": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}'
+    datefmt: "%Y-%m-%dT%H:%M:%S"
+
+# Handlers configuration
+handlers:
+  # Console handler
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: simple
+    stream: ext://sys.stdout
+  
+  # File handler - general application logs
+  file:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: detailed
+    filename: logs/ecg_app.log
+    maxBytes: 10485760  # 10 MB
+    backupCount: 10
+    encoding: utf-8
+  
+  # File handler - error logs only
+  error_file:
+    class: logging.handlers.RotatingFileHandler
+    level: ERROR
+    formatter: detailed
+    filename: logs/ecg_errors.log
+    maxBytes: 5242880  # 5 MB
+    backupCount: 5
+    encoding: utf-8
+  
+  # Training metrics handler
+  training_metrics:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: json
+    filename: logs/training_metrics.log
+    maxBytes: 52428800  # 50 MB
+    backupCount: 5
+    encoding: utf-8
+  
+  # HITL feedback handler
+  hitl_feedback:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: json
+    filename: logs/hitl_feedback.log
+    maxBytes: 10485760  # 10 MB
+    backupCount: 10
+    encoding: utf-8
+  
+  # Performance metrics handler
+  performance:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: json
+    filename: logs/performance.log
+    maxBytes: 10485760  # 10 MB
+    backupCount: 5
+    encoding: utf-8
+
+# Loggers configuration
+loggers:
+  # Root logger
+  root:
+    level: INFO
+    handlers: [console, file, error_file]
+    propagate: false
+  
+  # Data pipeline logger
+  data:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+    qualname: src.data
+  
+  # Model logger
+  models:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+    qualname: src.models
+  
+  # Training logger
+  training:
+    level: INFO
+    handlers: [console, file, training_metrics]
+    propagate: false
+    qualname: src.training
+  
+  # Inference logger
+  inference:
+    level: INFO
+    handlers: [console, file, performance]
+    propagate: false
+    qualname: src.inference
+  
+  # HITL logger
+  hitl:
+    level: INFO
+    handlers: [console, file, hitl_feedback]
+    propagate: false
+    qualname: src.hitl
+  
+  # Dashboard logger
+  dashboard:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+    qualname: dashboard
+  
+  # Debug logger (separate for detailed debugging)
+  debug:
+    level: DEBUG
+    handlers: [file]
+    propagate: false
+    qualname: debug
+
+# Special logging configurations
+logging_configs:
+  # Training progress logging
+  training_progress:
+    enabled: true
+    log_interval_epochs: 1
+    log_interval_batches: 10
+    metrics_to_log:
+      - loss
+      - accuracy
+      - precision
+      - recall
+      - f1_score
+      - learning_rate
+  
+  # Validation logging
+  validation:
+    enabled: true
+    log_epochs: 1
+    metrics_to_log:
+      - val_loss
+      - val_accuracy
+      - val_f1
+      - val_auc_roc
+  
+  # Performance monitoring
+  performance_monitoring:
+    enabled: true
+    log_interval_seconds: 60
+    metrics_to_monitor:
+      - inference_time_ms
+      - memory_usage_mb
+      - cpu_usage_percent
+      - gpu_usage_percent
+      - queue_size
+  
+  # Error tracking
+  error_tracking:
+    enabled: true
+    log_stack_trace: true
+    alert_on_critical: true
+    alert_threshold: 10  # Number of errors before alert
+  
+  # Audit logging (for HITL reviews)
+  audit_logging:
+    enabled: true
+    log_reviews: true
+    log_corrections: true
+    log_escalations: true
+    log_retraining: true
+    retention_days: 90
+
+# Color configuration for console output (if supported)
+colors:
+  DEBUG: "\033[36m"  # Cyan
+  INFO: "\033[32m"   # Green
+  WARNING: "\033[33m" # Yellow
+  ERROR: "\033[31m"   # Red
+  CRITICAL: "\033[41m" # Red background
+  RESET: "\033[0m"
+
+# Email alerts configuration (optional)
+email_alerts:
+  enabled: false
+  smtp_host: smtp.gmail.com
+  smtp_port: 587
+  sender: alerts@ecg-monitoring.com
+  recipients:
+    - admin@ecg-monitoring.com
+    - oncall@ecg-monitoring.com
+  alert_levels:
+    - ERROR
+    - CRITICAL
+  rate_limit_seconds: 300  
+
+# Slack webhook alerts (optional)
+slack_alerts:
+  enabled: false
+  webhook_url: https://hooks.slack.com/services/xxx/yyy/zzz
+  channel: "#ecg-alerts"
+  username: "ECG Monitor"
+  icon_emoji: ":heartbeat:"
+  alert_levels:
+    - WARNING
+    - ERROR
+    - CRITICAL
+
+# Log rotation settings
+rotation:
+  enabled: true
+  when: midnight  # midnight, weekly, monthly
+  interval: 1
+  backup_count: 30
+  compress: true
+  compress_format: gz
+
+# Log retention
+retention:
+  enabled: true
+  max_days: 90
+  archive_dir: logs/archive
+  delete_after_archive: true

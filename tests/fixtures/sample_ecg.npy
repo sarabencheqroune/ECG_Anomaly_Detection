@@ -1,0 +1,100 @@
+"""
+Generate sample ECG data for testing
+Run this script to create the sample_ecg.npy file
+"""
+
+import numpy as np
+from pathlib import Path
+
+def generate_sample_ecg():
+    """Generate a realistic ECG signal sample"""
+    sampling_rate = 360
+    duration = 10  # seconds
+    t = np.linspace(0, duration, duration * sampling_rate)
+    
+    # Generate synthetic ECG
+    ecg = np.zeros_like(t)
+    
+    # Heart rate around 75 BPM (0.8s between beats)
+    beat_interval = 0.8  # seconds
+    beat_samples = int(beat_interval * sampling_rate)
+    
+    # Create a single beat template
+    beat_template = np.zeros(beat_samples)
+    beat_idx = int(0.2 * sampling_rate)  # R-peak at 200ms
+    
+    # P wave
+    p_start = beat_idx - int(0.15 * sampling_rate)
+    p_end = beat_idx - int(0.05 * sampling_rate)
+    if p_start >= 0 and p_end < len(beat_template):
+        p_window = np.hanning(p_end - p_start)
+        beat_template[p_start:p_end] += 0.15 * p_window
+    
+    # QRS complex
+    qrs_start = beat_idx - int(0.03 * sampling_rate)
+    qrs_end = beat_idx + int(0.04 * sampling_rate)
+    if qrs_start >= 0 and qrs_end < len(beat_template):
+        qrs_window = np.hanning(qrs_end - qrs_start)
+        beat_template[qrs_start:qrs_end] += 1.0 * qrs_window
+    
+    # T wave
+    t_start = beat_idx + int(0.15 * sampling_rate)
+    t_end = beat_idx + int(0.35 * sampling_rate)
+    if t_start < len(beat_template) and t_end <= len(beat_template):
+        t_window = np.hanning(t_end - t_start)
+        beat_template[t_start:t_end] += 0.25 * t_window
+    
+    # Repeat the beat template
+    for i in range(0, len(ecg), beat_samples):
+        if i + len(beat_template) <= len(ecg):
+            ecg[i:i+len(beat_template)] += beat_template
+    
+    # Add baseline wander
+    baseline = 0.1 * np.sin(2 * np.pi * 0.2 * t)
+    ecg += baseline
+    
+    # Add noise
+    ecg += 0.05 * np.random.randn(len(ecg))
+    
+    return ecg.astype(np.float32)
+
+def generate_sample_beat():
+    """Generate a single beat for testing"""
+    sampling_rate = 360
+    t = np.linspace(-0.2, 0.5, int(0.7 * sampling_rate))
+    
+    beat = np.zeros_like(t)
+    
+    # P wave
+    p_idx = np.argmin(np.abs(t - (-0.15)))
+    beat[p_idx:p_idx+15] = 0.15 * np.hanning(15)
+    
+    # QRS complex
+    r_idx = np.argmin(np.abs(t - 0))
+    beat[r_idx-5:r_idx+15] = 1.0 * np.hanning(20)
+    
+    # S wave
+    s_idx = np.argmin(np.abs(t - 0.04))
+    beat[s_idx:s_idx+10] = -0.3 * np.hanning(10)
+    
+    # T wave
+    t_idx = np.argmin(np.abs(t - 0.3))
+    beat[t_idx:t_idx+25] = 0.25 * np.hanning(25)
+    
+    return beat.astype(np.float32)
+
+if __name__ == "__main__":
+    # Create fixtures directory
+    fixtures_dir = Path(__file__).parent
+    fixtures_dir.mkdir(exist_ok=True)
+    
+    # Generate and save sample ECG
+    sample_ecg = generate_sample_ecg()
+    np.save(fixtures_dir / "sample_ecg.npy", sample_ecg)
+    
+    # Generate and save sample beat
+    sample_beat = generate_sample_beat()
+    np.save(fixtures_dir / "sample_beat.npy", sample_beat)
+    
+    print(f"Generated sample_ecg.npy: shape {sample_ecg.shape}")
+    print(f"Generated sample_beat.npy: shape {sample_beat.shape}")

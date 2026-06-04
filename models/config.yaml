@@ -1,0 +1,336 @@
+# Model Configuration for ECG Anomaly Detection
+# This configuration file defines all model parameters and training settings
+
+# ============================================
+# Model Architecture
+# ============================================
+
+model:
+  # Model type: cnn, autoencoder, hybrid, lstm, transformer
+  type: "hybrid"
+  
+  # Input configuration
+  input_dim: 187  # Number of samples per beat (at 360Hz, ~520ms window)
+  num_classes: 5  # Normal, AFib, PVC, Bradycardia, Other
+  
+  # CNN Classifier configuration
+  cnn:
+    conv_channels: [32, 64, 128]
+    kernel_sizes: [5, 5, 3]
+    strides: [1, 1, 1]
+    padding: [2, 2, 1]  # 'same' padding
+    pool_sizes: [2, 2, 2]
+    dropout_rates: [0.2, 0.2, 0.2]
+    use_batch_norm: true
+    
+  # Autoencoder configuration
+  autoencoder:
+    latent_dim: 32
+    encoder_layers: [187, 128, 64, 32]
+    decoder_layers: [32, 64, 128, 187]
+    activation: "relu"
+    output_activation: "linear"
+    dropout: 0.2
+    
+  # Hybrid model configuration
+  hybrid:
+    share_encoder: true
+    fusion_type: "concat"  # concat, add, weighted
+    classification_weight: 0.7
+    reconstruction_weight: 0.3
+    
+  # LSTM configuration (optional)
+  lstm:
+    hidden_size: 128
+    num_layers: 2
+    bidirectional: true
+    dropout: 0.3
+    
+  # Transformer configuration (optional)
+  transformer:
+    d_model: 128
+    nhead: 8
+    num_encoder_layers: 4
+    dim_feedforward: 512
+    dropout: 0.1
+
+# ============================================
+# Training Configuration
+# ============================================
+
+training:
+  # Basic parameters
+  epochs: 100
+  batch_size: 64
+  learning_rate: 0.001
+  
+  # Optimizer
+  optimizer: "adamw"  # adam, adamw, sgd, rmsprop
+  weight_decay: 0.0001
+  momentum: 0.9  # for SGD
+  
+  # Learning rate scheduler
+  scheduler:
+    type: "cosine"  # step, cosine, reduce_on_plateau, one_cycle
+    step_size: 30
+    gamma: 0.1
+    patience: 10
+    factor: 0.5
+    T_max: 100
+    eta_min: 0.000001
+    
+  # Loss functions
+  loss:
+    classification: "focal"  # cross_entropy, focal, weighted_ce
+    reconstruction: "mse"    # mse, mae, huber
+    contrastive: "triplet"   # contrastive, triplet, supcon
+    
+    # Loss weights
+    weights:
+      classification: 1.0
+      reconstruction: 0.5
+      contrastive: 0.1
+      sparsity: 0.01
+      orthogonality: 0.001
+      
+    # Focal loss parameters
+    focal_gamma: 2.0
+    focal_alpha: 0.25
+    
+  # Regularization
+  regularization:
+    dropout_rate: 0.2
+    weight_decay: 0.0001
+    label_smoothing: 0.05
+    
+  # Advanced training
+  mixed_precision: true
+  gradient_clip: 1.0
+  gradient_accumulation_steps: 1
+  
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 20
+    monitor: "val_loss"
+    mode: "min"
+    min_delta: 0.0001
+    
+  # Model checkpointing
+  checkpoint:
+    save_frequency: 5
+    save_best_only: true
+    monitor: "val_accuracy"
+    mode: "max"
+    
+  # Data augmentation
+  augmentation:
+    enabled: true
+    intensity: "medium"  # light, medium, heavy
+    methods: ["noise", "baseline", "time_warp", "amplitude"]
+
+# ============================================
+# Data Configuration
+# ============================================
+
+data:
+  # Data sources
+  datasets:
+    mit_bih: true
+    ptb_xl: true
+    
+  # Data paths
+  raw_data_dir: "./data/raw"
+  processed_data_dir: "./data/processed"
+  cache_dir: "./data/cache"
+  
+  # Preprocessing
+  preprocessing:
+    sampling_rate: 360
+    lowcut: 0.5
+    highcut: 40.0
+    notch_filter: 50.0  # Hz (60 for US)
+    remove_baseline: true
+    normalize: "zscore"  # zscore, minmax, robust
+    
+  # Beat segmentation
+  segmentation:
+    pre_window_ms: 100
+    post_window_ms: 420
+    beat_length: 187
+    r_peak_detection: "neurokit2"  # neurokit2, biosppy, hamilton
+    
+  # Data splitting
+  split:
+    train_ratio: 0.7
+    val_ratio: 0.15
+    test_ratio: 0.15
+    patient_wise: true
+    random_seed: 42
+    
+  # Class balancing
+  balancing:
+    enabled: true
+    method: "weighted"  # weighted, oversample, undersample
+    target_ratio: "auto"
+
+# ============================================
+# Feature Extraction
+# ============================================
+
+features:
+  # RR interval features
+  rr_intervals:
+    enabled: true
+    time_domain: true
+    frequency_domain: true
+    nonlinear: true
+    
+  # Wavelet features
+  wavelet:
+    enabled: true
+    wavelet_type: "db6"
+    decomposition_level: 4
+    features: ["statistics", "energy", "entropy"]
+    
+  # Morphological features
+  morphological:
+    enabled: true
+    features: ["intervals", "amplitudes", "areas", "slopes"]
+    
+  # Feature fusion
+  fusion:
+    method: "concat"  # concat, weighted, attention
+    feature_selection: true
+    n_selected_features: 50
+    dimensionality_reduction: "pca"
+    n_components: 30
+
+# ============================================
+# Inference Configuration
+# ============================================
+
+inference:
+  # Batch inference
+  batch_size: 32
+  device: "auto"  # auto, cuda, cpu
+  
+  # Confidence thresholds
+  thresholds:
+    review_confidence: 0.7
+    anomaly_detection: 0.5
+    critical_confidence: 0.3
+    
+  # Calibration
+  calibration:
+    enabled: true
+    temperature_scaling: true
+    isotonic_regression: false
+    
+  # Human-in-the-Loop (HITL)
+  hitl:
+    enabled: true
+    review_queue_size: 1000
+    confidence_threshold: 0.7
+    max_wait_time_seconds: 300
+
+# ============================================
+# Evaluation Configuration
+# ============================================
+
+evaluation:
+  # Metrics to compute
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1_score"
+    - "auc_roc"
+    - "auc_pr"
+    - "mcc"
+    - "kappa"
+    - "specificity"
+    - "npv"
+    
+  # Cross-validation
+  cross_validation:
+    enabled: false
+    folds: 5
+    stratified: true
+    
+  # Bootstrap confidence intervals
+  bootstrap:
+    enabled: true
+    iterations: 1000
+    confidence_level: 0.95
+    
+  # Visualization
+  visualization:
+    save_plots: true
+    plot_format: "png"
+    dpi: 150
+
+# ============================================
+# Deployment Configuration
+# ============================================
+
+deployment:
+  # Export formats
+  export:
+    torchscript: true
+    onnx: true
+    tensorrt: false
+    
+  # Optimization
+  optimization:
+    quantize: true
+    prune: false
+    distill: false
+    
+  # Monitoring
+  monitoring:
+    log_predictions: true
+    log_confidence: true
+    track_latency: true
+    alert_on_low_confidence: true
+    
+  # API Configuration
+  api:
+    host: "0.0.0.0"
+    port: 5000
+    workers: 4
+    timeout: 30
+
+# ============================================
+# Environment & Reproducibility
+# ============================================
+
+environment:
+  seed: 42
+  deterministic: true
+  cuda_deterministic: true
+  num_workers: 4
+  pin_memory: true
+  
+  # Logging
+  logging:
+    level: "INFO"
+    log_dir: "./logs"
+    tensorboard: true
+    wandb: false  # Weights & Biases
+    
+  # Experiment tracking
+  experiment:
+    name: "ecg_anomaly_detection_v1"
+    notes: "Hybrid model with CNN classifier and autoencoder anomaly detection"
+    tags: ["ecg", "anomaly_detection", "cnn", "autoencoder"]
+
+# ============================================
+# Version Information
+# ============================================
+
+version:
+  config_version: "2.0.0"
+  last_updated: "2024-01-15"
+  author: "ECG Anomaly Detection Team"
+  compatible_pytorch_version: ">=2.0.0"
